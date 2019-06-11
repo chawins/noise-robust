@@ -53,22 +53,25 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
 
-        # add noise
-        inputs += torch.randn_like(inputs) * std
-        # inputs += torch.rand_like(inputs) * std
-        # clip to [0, 1]
-        inputs = torch.clamp(inputs, 0, 1)
+        for x, y in zip(inputs, targets):
+            y_batch = y + torch.zeros(inputs.size(0),
+                                      device=device,
+                                      dtype=torch.long)
+            # add noise
+            x_batch = x + torch.randn_like(inputs) * std
+            # clip to [0, 1]
+            inputs = torch.clamp(x_batch, 0, 1)
 
-        optimizer.zero_grad()
-        outputs = net(inputs)
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
+            optimizer.zero_grad()
+            outputs = net(x_batch)
+            loss = criterion(outputs, y_batch)
+            loss.backward()
+            optimizer.step()
 
-        train_loss += loss.item()
-        _, predicted = outputs.max(1)
-        train_total += targets.size(0)
-        train_correct += predicted.eq(targets).sum().item()
+            train_loss += loss.item()
+            _, predicted = outputs.max(1)
+            train_total += y_batch.size(0)
+            train_correct += predicted.eq(y_batch).sum().item()
 
     val_loss, val_acc = evaluate(net, validloader, criterion, device, std=std)
 
@@ -87,12 +90,12 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
 def main():
 
     # Set experiment id
-    exp_id = 21
+    exp_id = 0
     # model_name = 'train_mnist_exp%d' % exp_id
-    model_name = 'mnist_exp%d' % exp_id
+    model_name = 'mnist_batch_noise_exp%d' % exp_id
 
     # Training parameters
-    std = 5
+    std = 0.2
     batch_size = 128
     epochs = 50
     data_augmentation = False

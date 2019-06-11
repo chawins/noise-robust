@@ -1,23 +1,24 @@
-'''Train MNIST model'''
+'''Train CIFAR-10 model with adversarial training'''
 from __future__ import print_function
 
 import logging
 import os
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
 
-import numpy as np
+from lib.adv_model import *
+from lib.cifar10_model import *
 from lib.dataset_utils import *
-from lib.mnist_model import *
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
-def evaluate(net, dataloader, criterion, device, std=0):
+def evaluate(net, dataloader, criterion, device, adv=False):
 
     net.eval()
     val_loss = 0
@@ -26,14 +27,7 @@ def evaluate(net, dataloader, criterion, device, std=0):
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(dataloader):
             inputs, targets = inputs.to(device), targets.to(device)
-
-            # add noise
-            inputs += torch.randn_like(inputs) * std
-            # inputs += torch.rand_like(inputs) * std
-            # clip to [0, 1]
-            inputs = torch.clamp(inputs, 0, 1)
-
-            outputs = net(inputs)
+            outputs = net(inputs, targets, attack=adv)
             loss = criterion(outputs, targets)
             val_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -44,7 +38,7 @@ def evaluate(net, dataloader, criterion, device, std=0):
 
 
 def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
-          log, save_best_only=True, best_acc=0, model_path='./model.pt', std=0):
+          log, save_best_only=True, best_loss=1e9, model_path='./model.pt'):
 
     net.train()
     train_loss = 0
@@ -52,15 +46,8 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
     train_total = 0
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
-
-        # add noise
-        inputs += torch.randn_like(inputs) * std
-        # inputs += torch.rand_like(inputs) * std
-        # clip to [0, 1]
-        inputs = torch.clamp(inputs, 0, 1)
-
         optimizer.zero_grad()
-        outputs = net(inputs)
+        outputs = net(inputs, targets, attack=True)
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
@@ -70,32 +57,32 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
         train_total += targets.size(0)
         train_correct += predicted.eq(targets).sum().item()
 
-    val_loss, val_acc = evaluate(net, validloader, criterion, device, std=std)
+    adv_loss, adv_acc = evaluate(net, validloader, criterion, device, adv=True)
+    val_loss, val_acc = evaluate(
+        net, validloader, criterion, device, adv=False)
 
-    log.info(' %5d | %.4f, %.4f | %8.4f, %7.4f', epoch,
+    log.info(' %5d | %.4f, %.4f | %.4f, %.4f | %.4f, %.4f | ', epoch,
              train_loss / train_total, train_correct / train_total,
-             val_loss, val_acc)
+             adv_loss, adv_acc, val_loss, val_acc)
 
     # Save model weights
-    if not save_best_only or (save_best_only and val_acc > best_acc):
+    if not save_best_only or (save_best_only and adv_loss < best_loss):
         log.info('Saving model...')
         torch.save(net.state_dict(), model_path)
-        best_acc = val_acc
-    return best_acc
+        best_loss = adv_loss
+    return best_loss
 
 
 def main():
 
     # Set experiment id
-    exp_id = 21
-    # model_name = 'train_mnist_exp%d' % exp_id
-    model_name = 'mnist_exp%d' % exp_id
+    exp_id = 5
+    model_name = 'adv_cifar10_exp%d' % exp_id
 
     # Training parameters
-    std = 5
     batch_size = 128
-    epochs = 50
-    data_augmentation = False
+    epochs = 80
+    data_augmentation = True
     learning_rate = 1e-3
     l1_reg = 0
     l2_reg = 0
@@ -118,7 +105,7 @@ def main():
 
     # Get logger
     log_file = model_name + '.log'
-    log = logging.getLogger('train_mnist')
+    log = logging.getLogger('train_cifar10')
     log.setLevel(logging.DEBUG)
     # Create formatter and add it to the handlers
     formatter = logging.Formatter(
@@ -130,38 +117,58 @@ def main():
     log.addHandler(fh)
 
     log.info(log_file)
-    log.info(('MNIST | exp_id: {}, seed: {}, init_learning_rate: {}, ' +
+    log.info(('CIFAR-10 | exp_id: {}, seed: {}, init_learning_rate: {}, ' +
               'batch_size: {}, l2_reg: {}, l1_reg: {}, epochs: {}, ' +
               'data_augmentation: {}, subtract_pixel_mean: {}').format(
                   exp_id, seed, learning_rate, batch_size, l2_reg, l1_reg,
                   epochs, data_augmentation, subtract_pixel_mean))
 
     log.info('Preparing data...')
-    trainloader, validloader, testloader = load_mnist(
-        batch_size, data_dir='/data', val_size=0.1, shuffle=True, seed=seed)
+    trainloader, validloader, testloader = load_cifar10(
+        batch_size, data_dir='/data', val_size=0.1, normalize=False,
+        augment=data_augmentation, shuffle=True, seed=seed)
 
     log.info('Building model...')
-    net = BasicModel()
-    net.to(device)
+    net = PreActResNet(PreActBlock, [2, 2, 2, 2])
+    # net = AlexNet()
+
+    # config = {'epsilon': 0.3,
+    #           'num_steps': 40,
+    #           'step_size': 0.01,
+    #           'random_start': True,
+    #           'loss_func': 'xent'}
+    # net = PGDModel(basic_net, config)
+    config = {'epsilon': 2,
+              'num_steps': 20,
+              'step_size': 0.3,
+              'random_start': False,
+              'loss_func': 'xent'}
+    net = PGDL2Model(net, config)
+
+    net = net.to(device)
     # if device == 'cuda':
     #     net = torch.nn.DataParallel(net)
     #     cudnn.benchmark = True
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, [30, 50, 70], gamma=0.1)
 
-    log.info(' epoch | loss  , acc    | val_loss, val_acc')
-    best_acc = 0
+    log.info(' epoch | loss  , acc    | adv_l , adv_a  | val_l , val_a |')
+    best_loss = 1e9
     for epoch in range(epochs):
-        best_acc = train(net, trainloader, validloader, criterion, optimizer,
-                         epoch, device, log, save_best_only=True,
-                         best_acc=best_acc, model_path=model_path, std=std)
+        lr_scheduler.step()
+        best_loss = train(net, trainloader, validloader, criterion, optimizer,
+                          epoch, device, log, save_best_only=True,
+                          best_loss=best_loss, model_path=model_path)
 
-    test_loss, test_acc = evaluate(net, testloader, criterion, device, std=std)
-    log.info('Test loss w/ noise: %.4f, Test acc w/ noise: %.4f',
-             test_loss, test_acc)
-    test_loss, test_acc = evaluate(net, testloader, criterion, device, std=0)
+    test_loss, test_acc = evaluate(
+        net, testloader, criterion, device, adv=False)
     log.info('Test loss: %.4f, Test acc: %.4f', test_loss, test_acc)
+    test_loss, test_acc = evaluate(
+        net, testloader, criterion, device, adv=True)
+    log.info('Test adv loss: %.4f, Test adv acc: %.4f', test_loss, test_acc)
 
 
 if __name__ == '__main__':

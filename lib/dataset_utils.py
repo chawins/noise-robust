@@ -378,3 +378,41 @@ def load_gtsrb_dataloader(data_dir, batch_size, num_workers=4):
         testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return trainloader, validloader, testloader
+
+
+def create_planes(d=1000, k=10, num_total=10000, bound=(0, 1), test_size=0.2,
+                  val_size=0.1, shuffle=True, seed=1):
+    """
+    Create plane dataset: two planes with dimension k in space of dimension d.
+    The first k dimensions are random numbers within the bound, dimensions k to
+    d - 1 are 0, and d-th dimension is bound[0] or bound[1] which determines
+    the class.
+    """
+
+    planes = np.zeros((num_total, d))
+    planes[:, :k] = np.random.uniform()
+    planes[:num_total // 2, -1] = bound[0]
+    planes[num_total // 2:, -1] = bound[1]
+
+    return (x_train, y_train), (x_valid, y_valid), (x_test, y_test)
+
+
+def load_planes(batch_size, data_dir='./data', test_size=0.2, val_size=0.1,
+                shuffle=True, seed=1):
+
+    (x_train, y_train), (x_valid, y_valid), (x_test, y_test) = create_planes(
+        test_size=test_size, val_size=val_size, seed=seed)
+
+    traindataset = RotateDataset(x_train.numpy().transpose(0, 2, 3, 1))
+    trainloader = torch.utils.data.DataLoader(
+        traindataset, batch_size=batch_size, shuffle=shuffle, num_workers=4)
+
+    validdataset = RotateDataset(x_valid.numpy().transpose(0, 2, 3, 1))
+    validloader = torch.utils.data.DataLoader(
+        validdataset, batch_size=batch_size, shuffle=False, num_workers=4)
+
+    testdataset = RotateDataset(x_test.numpy().transpose(0, 2, 3, 1))
+    testloader = torch.utils.data.DataLoader(
+        testdataset, batch_size=batch_size, shuffle=False, num_workers=4)
+
+    return trainloader, validloader, testloader

@@ -5,6 +5,8 @@ import torch.optim as optim
 
 import numpy as np
 
+INF = 1e15
+
 
 class CWL2Attack(object):
     """
@@ -58,18 +60,17 @@ class CWL2Attack(object):
         const = torch.zeros((batch_size, ), device=x_orig.device)
         const += initial_const
         lower_bound = torch.zeros_like(const)
-        upper_bound = torch.zeros_like(const) + 1e9
-        best_l2dist = torch.zeros_like(const) + 1e9
+        upper_bound = torch.zeros_like(const) + INF
+        best_l2dist = torch.zeros_like(const) + INF
 
         for binary_search_step in range(binary_search_steps):
             if binary_search_step == binary_search_steps - 1 and \
                     binary_search_steps >= 10:
                 # in the last binary search step, use the upper_bound instead
-                # TODO: find out why... it's not obvious why this is useful
                 const = upper_bound
 
             z_delta = torch.zeros_like(z_orig, requires_grad=True)
-            loss_at_previous_check = torch.zeros(1, device=x_orig.device) + 1e9
+            loss_at_previous_check = torch.zeros(1, device=x_orig.device) + INF
 
             # create a new optimizer
             optimizer = optim.Adam([z_delta], lr=learning_rate)
@@ -107,7 +108,7 @@ class CWL2Attack(object):
                     lower_bound[i] = const[i]
 
             for i in range(batch_size):
-                if upper_bound[i] == 1e9:
+                if upper_bound[i] == INF:
                     # exponential search if adv has not been found
                     const[i] *= 10
                 else:
@@ -159,7 +160,7 @@ class CWL2Attack(object):
         y_onehot = torch.zeros_like(logits)
         y_onehot.scatter_(1, exclude, 1)
         # make logits that we want to exclude a large negative number
-        other_logits = logits - y_onehot * 1e9
+        other_logits = logits - y_onehot * INF
         return other_logits.max(1)[0]
 
     @staticmethod

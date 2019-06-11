@@ -1,4 +1,4 @@
-'''Train MNIST model'''
+'''Train Basic CIFAR-10 model'''
 from __future__ import print_function
 
 import logging
@@ -10,8 +10,8 @@ import torch.nn as nn
 import torch.optim as optim
 
 import numpy as np
+from lib.cifar10_model import *
 from lib.dataset_utils import *
-from lib.mnist_model import *
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -53,22 +53,25 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
 
-        # add noise
-        inputs += torch.randn_like(inputs) * std
-        # inputs += torch.rand_like(inputs) * std
-        # clip to [0, 1]
-        inputs = torch.clamp(inputs, 0, 1)
+        for x, y in zip(inputs, targets):
+            y_batch = y + torch.zeros(inputs.size(0),
+                                      device=device,
+                                      dtype=torch.long)
+            # add noise
+            x_batch = x + torch.randn_like(inputs) * std
+            # clip to [0, 1]
+            inputs = torch.clamp(x_batch, 0, 1)
 
-        optimizer.zero_grad()
-        outputs = net(inputs)
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
+            optimizer.zero_grad()
+            outputs = net(x_batch)
+            loss = criterion(outputs, y_batch)
+            loss.backward()
+            optimizer.step()
 
-        train_loss += loss.item()
-        _, predicted = outputs.max(1)
-        train_total += targets.size(0)
-        train_correct += predicted.eq(targets).sum().item()
+            train_loss += loss.item()
+            _, predicted = outputs.max(1)
+            train_total += y_batch.size(0)
+            train_correct += predicted.eq(y_batch).sum().item()
 
     val_loss, val_acc = evaluate(net, validloader, criterion, device, std=std)
 
@@ -87,15 +90,14 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
 def main():
 
     # Set experiment id
-    exp_id = 21
-    # model_name = 'train_mnist_exp%d' % exp_id
-    model_name = 'mnist_exp%d' % exp_id
+    exp_id = 0
+    model_name = 'cifar10_resnet_bn_exp%d' % exp_id
 
     # Training parameters
-    std = 5
+    std = 0.2
     batch_size = 128
-    epochs = 50
-    data_augmentation = False
+    epochs = 80
+    data_augmentation = True
     learning_rate = 1e-3
     l1_reg = 0
     l2_reg = 0
@@ -118,7 +120,7 @@ def main():
 
     # Get logger
     log_file = model_name + '.log'
-    log = logging.getLogger('train_mnist')
+    log = logging.getLogger('train_cifar10')
     log.setLevel(logging.DEBUG)
     # Create formatter and add it to the handlers
     formatter = logging.Formatter(
@@ -130,29 +132,35 @@ def main():
     log.addHandler(fh)
 
     log.info(log_file)
-    log.info(('MNIST | exp_id: {}, seed: {}, init_learning_rate: {}, ' +
+    log.info(('CIFAR-10 | exp_id: {}, seed: {}, init_learning_rate: {}, ' +
               'batch_size: {}, l2_reg: {}, l1_reg: {}, epochs: {}, ' +
               'data_augmentation: {}, subtract_pixel_mean: {}').format(
                   exp_id, seed, learning_rate, batch_size, l2_reg, l1_reg,
                   epochs, data_augmentation, subtract_pixel_mean))
 
     log.info('Preparing data...')
-    trainloader, validloader, testloader = load_mnist(
-        batch_size, data_dir='/data', val_size=0.1, shuffle=True, seed=seed)
+    trainloader, validloader, testloader = load_cifar10(
+        batch_size, data_dir='/data', val_size=0.1, normalize=False,
+        augment=data_augmentation, shuffle=True, seed=seed)
 
     log.info('Building model...')
-    net = BasicModel()
-    net.to(device)
+    # net = ResNet(BasicBlock, [2, 2, 2, 2])
+    net = PreActResNet(PreActBlock, [2, 2, 2, 2])
+    net = net.to(device)
     # if device == 'cuda':
     #     net = torch.nn.DataParallel(net)
     #     cudnn.benchmark = True
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(
+        net.parameters(), lr=learning_rate, weight_decay=l2_reg)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, [40, 60], gamma=0.1)
 
     log.info(' epoch | loss  , acc    | val_loss, val_acc')
     best_acc = 0
     for epoch in range(epochs):
+        lr_scheduler.step()
         best_acc = train(net, trainloader, validloader, criterion, optimizer,
                          epoch, device, log, save_best_only=True,
                          best_acc=best_acc, model_path=model_path, std=std)

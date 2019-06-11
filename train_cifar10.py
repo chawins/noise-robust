@@ -14,7 +14,7 @@ from lib.cifar10_model import *
 from lib.dataset_utils import *
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def evaluate(net, dataloader, criterion, device, std=0):
@@ -26,6 +26,13 @@ def evaluate(net, dataloader, criterion, device, std=0):
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(dataloader):
             inputs, targets = inputs.to(device), targets.to(device)
+
+            # add noise
+            inputs += torch.randn_like(inputs) * std
+            # inputs += torch.rand_like(inputs) * std
+            # clip to [0, 1]
+            inputs = torch.clamp(inputs, 0, 1)
+
             outputs = net(inputs)
             loss = criterion(outputs, targets)
             val_loss += loss.item()
@@ -45,6 +52,13 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
     train_total = 0
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
+
+        # add noise
+        inputs += torch.randn_like(inputs) * std
+        # inputs += torch.rand_like(inputs) * std
+        # clip to [0, 1]
+        inputs = torch.clamp(inputs, 0, 1)
+
         optimizer.zero_grad()
         outputs = net(inputs)
         loss = criterion(outputs, targets)
@@ -73,16 +87,17 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
 def main():
 
     # Set experiment id
-    exp_id = 2
+    exp_id = 5
     model_name = 'cifar10_resnet_exp%d' % exp_id
 
     # Training parameters
+    std = 0.2
     batch_size = 128
-    epochs = 120
-    data_augmentation = False
+    epochs = 80
+    data_augmentation = True
     learning_rate = 1e-3
     l1_reg = 0
-    l2_reg = 1e-4
+    l2_reg = 0
 
     # Subtracting pixel mean improves accuracy
     subtract_pixel_mean = False
@@ -114,34 +129,30 @@ def main():
     log.addHandler(fh)
 
     log.info(log_file)
-    log.info(('CIFAR10 | exp_id: {}, seed: {}, init_learning_rate: {}, ' +
+    log.info(('CIFAR-10 | exp_id: {}, seed: {}, init_learning_rate: {}, ' +
               'batch_size: {}, l2_reg: {}, l1_reg: {}, epochs: {}, ' +
               'data_augmentation: {}, subtract_pixel_mean: {}').format(
                   exp_id, seed, learning_rate, batch_size, l2_reg, l1_reg,
                   epochs, data_augmentation, subtract_pixel_mean))
 
     log.info('Preparing data...')
-    trainloader, validloader, testloader = load_cifar10(batch_size,
-                                                        data_dir='/data',
-                                                        val_size=0.1,
-                                                        normalize=False,
-                                                        augment=True,
-                                                        shuffle=True,
-                                                        seed=seed)
+    trainloader, validloader, testloader = load_cifar10(
+        batch_size, data_dir='/data', val_size=0.1, normalize=False,
+        augment=data_augmentation, shuffle=True, seed=seed)
 
     log.info('Building model...')
     # net = ResNet(BasicBlock, [2, 2, 2, 2])
     net = PreActResNet(PreActBlock, [2, 2, 2, 2])
     net = net.to(device)
-    if device == 'cuda':
-        net = torch.nn.DataParallel(net)
-        cudnn.benchmark = True
+    # if device == 'cuda':
+    #     net = torch.nn.DataParallel(net)
+    #     cudnn.benchmark = True
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(
         net.parameters(), lr=learning_rate, weight_decay=l2_reg)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, [50, 70, 90], gamma=0.1)
+        optimizer, [40, 60], gamma=0.1)
 
     log.info(' epoch | loss  , acc    | val_loss, val_acc')
     best_acc = 0
@@ -149,9 +160,12 @@ def main():
         lr_scheduler.step()
         best_acc = train(net, trainloader, validloader, criterion, optimizer,
                          epoch, device, log, save_best_only=True,
-                         best_acc=best_acc, model_path=model_path)
+                         best_acc=best_acc, model_path=model_path, std=std)
 
-    test_loss, test_acc = evaluate(net, testloader, criterion, device)
+    test_loss, test_acc = evaluate(net, testloader, criterion, device, std=std)
+    log.info('Test loss w/ noise: %.4f, Test acc w/ noise: %.4f',
+             test_loss, test_acc)
+    test_loss, test_acc = evaluate(net, testloader, criterion, device, std=0)
     log.info('Test loss: %.4f, Test acc: %.4f', test_loss, test_acc)
 
 
