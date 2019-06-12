@@ -68,9 +68,9 @@ def load_mnist(batch_size,
     validset = torch.utils.data.TensorDataset(x_valid, y_valid)
     testset = torch.utils.data.TensorDataset(x_test, y_test)
     trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=batch_size, num_workers=num_workers)
+        trainset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     validloader = torch.utils.data.DataLoader(
-        validset, batch_size=batch_size, num_workers=num_workers)
+        validset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     testloader = torch.utils.data.DataLoader(
         testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
@@ -238,6 +238,28 @@ def load_cifar10_all(data_dir='./data', val_size=0.1, shuffle=True, seed=1):
     return x_train, x_valid, x_test
 
 
+def load_cifar10_noise(batch_size, data_dir='./data', val_size=0.1, sd=0,
+                       shuffle=True, seed=1):
+
+    (x_train, y_train), (x_valid, y_valid), (x_test, y_test) = load_cifar10_all(
+        data_dir, val_size=val_size, seed=seed)
+
+    x_train += torch.randn_like(x_train) * sd
+
+    trainset = torch.utils.data.TensorDataset(x_train, y_train)
+    validset = torch.utils.data.TensorDataset(x_valid, y_valid)
+    testset = torch.utils.data.TensorDataset(x_test, y_test)
+
+    trainloader = torch.utils.data.DataLoader(
+        trainset, batch_size=batch_size, shuffle=shuffle, num_workers=4)
+    validloader = torch.utils.data.DataLoader(
+        validset, batch_size=batch_size, shuffle=False, num_workers=4)
+    testloader = torch.utils.data.DataLoader(
+        testset, batch_size=batch_size, shuffle=False, num_workers=4)
+
+    return trainloader, validloader, testloader
+
+
 def load_cifar10_rot(batch_size, data_dir='./data', val_size=0.1, shuffle=True,
                      seed=1):
 
@@ -381,38 +403,59 @@ def load_gtsrb_dataloader(data_dir, batch_size, num_workers=4):
 
 
 def create_planes(d=1000, k=10, num_total=10000, bound=(0, 1), test_size=0.2,
-                  val_size=0.1, shuffle=True, seed=1):
+                  val_size=0.1, seed=1):
     """
     Create plane dataset: two planes with dimension k in space of dimension d.
-    The first k dimensions are random numbers within the bound, dimensions k to
-    d - 1 are 0, and d-th dimension is bound[0] or bound[1] which determines
-    the class.
+    The first k dimensions are random numbers within the bound, dimensions
+    k + 1 to d - 1 are 0, and d-th dimension is bound[0] or bound[1] which
+    determines the class.
     """
 
-    planes = np.zeros((num_total, d))
-    planes[:, :k] = np.random.uniform()
+    assert bound[0] < bound[1]
+
+    np.random.seed(seed)
+
+    planes = torch.zeros((num_total, d))
+    planes[:, :k] = torch.rand(num_total, k) * (bound[1] - bound[0]) + bound[0]
     planes[:num_total // 2, -1] = bound[0]
     planes[num_total // 2:, -1] = bound[1]
+
+    indices = np.arange(num_total)
+    np.random.shuffle(indices)
+
+    train_idx = int(num_total * (1 - test_size - val_size))
+    test_idx = int(num_total * (1 - test_size))
+    x_train = planes[indices[:train_idx]]
+    x_valid = planes[indices[train_idx:test_idx]]
+    x_test = planes[indices[test_idx:]]
+
+    y_train = torch.tensor(
+        (indices[:train_idx] >= num_total // 2).astype(np.int64))
+    y_valid = torch.tensor(
+        (indices[train_idx:test_idx] >= num_total // 2).astype(np.int64))
+    y_test = torch.tensor(
+        (indices[test_idx:] >= num_total // 2).astype(np.int64))
 
     return (x_train, y_train), (x_valid, y_valid), (x_test, y_test)
 
 
-def load_planes(batch_size, data_dir='./data', test_size=0.2, val_size=0.1,
-                shuffle=True, seed=1):
+def load_planes(batch_size, d=1000, k=10, num_total=10000, bound=(0, 1),
+                test_size=0.2, val_size=0.1, shuffle=True, seed=1):
+
+    num_workers = 4
 
     (x_train, y_train), (x_valid, y_valid), (x_test, y_test) = create_planes(
-        test_size=test_size, val_size=val_size, seed=seed)
+        d=d, k=k, num_total=num_total, bound=bound, test_size=test_size,
+        val_size=val_size, seed=seed)
 
-    traindataset = RotateDataset(x_train.numpy().transpose(0, 2, 3, 1))
+    trainset = torch.utils.data.TensorDataset(x_train, y_train)
+    validset = torch.utils.data.TensorDataset(x_valid, y_valid)
+    testset = torch.utils.data.TensorDataset(x_test, y_test)
     trainloader = torch.utils.data.DataLoader(
-        traindataset, batch_size=batch_size, shuffle=shuffle, num_workers=4)
-
-    validdataset = RotateDataset(x_valid.numpy().transpose(0, 2, 3, 1))
+        trainset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     validloader = torch.utils.data.DataLoader(
-        validdataset, batch_size=batch_size, shuffle=False, num_workers=4)
-
-    testdataset = RotateDataset(x_test.numpy().transpose(0, 2, 3, 1))
+        validset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     testloader = torch.utils.data.DataLoader(
-        testdataset, batch_size=batch_size, shuffle=False, num_workers=4)
+        testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return trainloader, validloader, testloader
