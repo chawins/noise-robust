@@ -101,6 +101,13 @@ def load_mnist_all(data_dir='./data', val_size=0.1, shuffle=True, seed=1):
         x.numpy(), y.numpy(), test_size=val_size, shuffle=shuffle,
         random_state=seed, stratify=y)
 
+    # scale up
+    # scale = 2
+    # x_train = x_train.repeat(scale, axis=2).repeat(scale, axis=3)
+    # x_valid = x_valid.repeat(scale, axis=2).repeat(scale, axis=3)
+    # x_test = x_test.numpy().repeat(scale, axis=2).repeat(scale, axis=3)
+    # x_test = torch.tensor(x_test)
+
     return ((torch.tensor(x_train), torch.tensor(y_train)),
             (torch.tensor(x_valid), torch.tensor(y_valid)), (x_test, y_test))
 
@@ -417,8 +424,10 @@ def create_planes(d=1000, k=10, num_total=10000, bound=(0, 1), test_size=0.2,
 
     planes = torch.zeros((num_total, d))
     planes[:, :k] = torch.rand(num_total, k) * (bound[1] - bound[0]) + bound[0]
-    planes[:num_total // 2, -1] = bound[0]
-    planes[num_total // 2:, -1] = bound[1]
+    # planes[:num_total // 2, -1] = bound[0]
+    # planes[num_total // 2:, -1] = bound[1]
+    planes[:num_total // 2, -1] = 0.3
+    planes[num_total // 2:, -1] = 0.7
 
     indices = np.arange(num_total)
     np.random.shuffle(indices)

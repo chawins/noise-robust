@@ -17,7 +17,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 
-def evaluate(net, dataloader, criterion, device, std=0):
+def evaluate(net, dataloader, criterion, device, sd=0):
 
     net.eval()
     val_loss = 0
@@ -28,8 +28,8 @@ def evaluate(net, dataloader, criterion, device, std=0):
             inputs, targets = inputs.to(device), targets.to(device)
 
             # add noise
-            inputs += torch.randn_like(inputs) * std
-            # inputs += torch.rand_like(inputs) * std
+            inputs += torch.randn_like(inputs) * sd
+            # inputs += torch.rand_like(inputs) * sd
             # clip to [0, 1]
             inputs = torch.clamp(inputs, 0, 1)
 
@@ -44,7 +44,7 @@ def evaluate(net, dataloader, criterion, device, std=0):
 
 
 def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
-          log, save_best_only=True, best_acc=0, model_path='./model.pt', std=0):
+          log, save_best_only=True, best_acc=0, model_path='./model.pt', sd=0):
 
     net.train()
     train_loss = 0
@@ -54,8 +54,8 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
         inputs, targets = inputs.to(device), targets.to(device)
 
         # add noise
-        inputs += torch.randn_like(inputs) * std
-        # inputs += torch.rand_like(inputs) * std
+        inputs += torch.randn_like(inputs) * sd
+        # inputs += torch.rand_like(inputs) * sd
         # clip to [0, 1]
         inputs = torch.clamp(inputs, 0, 1)
 
@@ -70,7 +70,7 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
         train_total += targets.size(0)
         train_correct += predicted.eq(targets).sum().item()
 
-    val_loss, val_acc = evaluate(net, validloader, criterion, device, std=std)
+    val_loss, val_acc = evaluate(net, validloader, criterion, device, sd=sd)
 
     log.info(' %5d | %.4f, %.4f | %8.4f, %7.4f', epoch,
              train_loss / train_total, train_correct / train_total,
@@ -87,12 +87,12 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
 def main():
 
     # Set experiment id
-    exp_id = 21
+    exp_id = 25
     # model_name = 'train_mnist_exp%d' % exp_id
     model_name = 'mnist_exp%d' % exp_id
 
     # Training parameters
-    std = 5
+    sd = 0
     batch_size = 128
     epochs = 50
     data_augmentation = False
@@ -155,12 +155,12 @@ def main():
     for epoch in range(epochs):
         best_acc = train(net, trainloader, validloader, criterion, optimizer,
                          epoch, device, log, save_best_only=True,
-                         best_acc=best_acc, model_path=model_path, std=std)
+                         best_acc=best_acc, model_path=model_path, sd=sd)
 
-    test_loss, test_acc = evaluate(net, testloader, criterion, device, std=std)
+    test_loss, test_acc = evaluate(net, testloader, criterion, device, sd=sd)
     log.info('Test loss w/ noise: %.4f, Test acc w/ noise: %.4f',
              test_loss, test_acc)
-    test_loss, test_acc = evaluate(net, testloader, criterion, device, std=0)
+    test_loss, test_acc = evaluate(net, testloader, criterion, device, sd=0)
     log.info('Test loss: %.4f, Test acc: %.4f', test_loss, test_acc)
 
 

@@ -4,12 +4,12 @@ from __future__ import print_function
 import logging
 import os
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
 
-import numpy as np
 from lib.dataset_utils import *
 from lib.simple_model import *
 
@@ -87,14 +87,14 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
 def main():
 
     # Set experiment id
-    exp_id = 9
+    exp_id = 99
     # model_name = 'train_mnist_exp%d' % exp_id
     model_name = 'planes_exp%d' % exp_id
 
     # Training parameters
     d = 3000
     k = 30
-    std = 0.3
+    std = 0.2
     batch_size = 128
     epochs = 50
     data_augmentation = False
@@ -141,11 +141,12 @@ def main():
 
     log.info('Preparing data...')
     trainloader, validloader, testloader = load_planes(
-        batch_size, d=d, k=k, num_total=50000, bound=(0, 1),
+        batch_size, d=d, k=k, num_total=60000, bound=(0, 1),
         test_size=0.2, val_size=0.1, shuffle=True, seed=seed)
 
     log.info('Building model...')
     net = DenseModel(d, num_classes=2)
+    # net = DenseModelV2(d, num_classes=2)
     net.to(device)
     # if device == 'cuda':
     #     net = torch.nn.DataParallel(net)

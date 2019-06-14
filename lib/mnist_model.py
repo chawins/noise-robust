@@ -3,11 +3,12 @@
 import copy
 import random
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
+
+import numpy as np
 
 
 class BasicModel(nn.Module):
@@ -23,6 +24,7 @@ class BasicModel(nn.Module):
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
         self.relu3 = nn.ReLU(inplace=True)
         self.fc1 = nn.Linear(8192, 1024)
+        # self.fc1 = nn.Linear(28800, 1024)
         self.relu4 = nn.ReLU(inplace=True)
         self.fc2 = nn.Linear(1024, 128)
         self.relu5 = nn.ReLU(inplace=True)

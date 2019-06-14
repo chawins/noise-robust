@@ -14,7 +14,7 @@ from lib.cifar10_model import *
 from lib.dataset_utils import *
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def evaluate(net, dataloader, criterion, device, sd=0):
@@ -28,10 +28,10 @@ def evaluate(net, dataloader, criterion, device, sd=0):
             inputs, targets = inputs.to(device), targets.to(device)
 
             # add noise
-            # inputs += torch.randn_like(inputs) * sd
+            inputs += torch.randn_like(inputs) * sd
             # inputs += torch.rand_like(inputs) * sd
             # clip to [0, 1]
-            # inputs = torch.clamp(inputs, 0, 1)
+            inputs = torch.clamp(inputs, 0, 1)
 
             outputs = net(inputs)
             loss = criterion(outputs, targets)
@@ -54,10 +54,10 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
         inputs, targets = inputs.to(device), targets.to(device)
 
         # add noise
-        # inputs += torch.randn_like(inputs) * sd
+        inputs += torch.randn_like(inputs) * sd
         # inputs += torch.rand_like(inputs) * sd
         # clip to [0, 1]
-        # inputs = torch.clamp(inputs, 0, 1)
+        inputs = torch.clamp(inputs, 0, 1)
 
         optimizer.zero_grad()
         outputs = net(inputs)
@@ -87,7 +87,7 @@ def train(net, trainloader, validloader, criterion, optimizer, epoch, device,
 def main():
 
     # Set experiment id
-    exp_id = 10
+    exp_id = 14
     model_name = 'cifar10_resnet_exp%d' % exp_id
 
     # Training parameters
@@ -137,15 +137,16 @@ def main():
     log.info('Additional info | sd: {}'.format(sd))
 
     log.info('Preparing data...')
-    # trainloader, validloader, testloader = load_cifar10(
-    #     batch_size, data_dir='/data', val_size=0.1, normalize=False,
-    #     augment=data_augmentation, shuffle=True, seed=seed)
-    trainloader, validloader, testloader = load_cifar10_noise(
-        batch_size, data_dir='/data', val_size=0.1, sd=sd, shuffle=True, seed=seed)
+    trainloader, validloader, testloader = load_cifar10(
+        batch_size, data_dir='/data', val_size=0.1, normalize=False,
+        augment=data_augmentation, shuffle=True, seed=seed)
+    # trainloader, validloader, testloader = load_cifar10_noise(
+    #     batch_size, data_dir='/data', val_size=0.1, sd=sd, shuffle=True, seed=seed)
 
     log.info('Building model...')
     # net = ResNet(BasicBlock, [2, 2, 2, 2])
-    net = PreActResNet(PreActBlock, [2, 2, 2, 2])
+    # net = PreActResNet(PreActBlock, [2, 2, 2, 2])
+    net = BasicModel(num_classes=10)
     net = net.to(device)
     # if device == 'cuda':
     #     net = torch.nn.DataParallel(net)
